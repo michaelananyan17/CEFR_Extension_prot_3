@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+    
+    body {
+      width: 380px;
+      padding: 0;
+      margin: 0;
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 450px;
+    }
+    
+    .container {
+      padding: 20px;
+      color: white;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      background: linear-gradient(45deg, #fff, #e0e7ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .header p {
+      font-size: 0.9rem;
+      opacity: 0.9;
+      margin: 0;
+    }
+    
+    .api-section {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    
+    .section-header h3 {
+      margin: 0;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    
+    .api-status {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    
+    .api-status.valid {
+      background: rgba(34, 197, 94, 0.3);
+      color: #bbf7d0;
+    }
+    
+    .api-status.invalid {
+      background: rgba(239, 68, 68, 0.3);
+      color: #fecaca;
+    }
+    
+    .api-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.9);
+      font-size: 0.85rem;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+    
+    .api-input:focus {
+      outline: none;
+      background: white;
+      box-shadow: 0 0 0 2px #6366f1;
+    }
+    
+    .api-help {
+      margin: 10px 0;
+    }
+    
+    .api-help details {
+      font-size: 0.8rem;
+    }
+    
+    .api-help summary {
+      cursor: pointer;
+      opacity: 0.8;
+      margin-bottom: 5px;
+    }
+    
+    .api-help .help-content {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 5px;
+    }
+    
+    .api-help ol {
+      margin: 5px 0;
+      padding-left: 20px;
+    }
+    
+    .api-help li {
+      margin-bottom: 3px;
+    }
+    
+    .api-help a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+    
+    .api-help a:hover {
+      text-decoration: underline;
+    }
+    
+    .api-help .note {
+      font-style: italic;
+      opacity: 0.8;
+      margin-top: 8px;
+      font-size: 0.75rem;
+    }
+    
+    .level-selector {
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .level-display {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .cefr-level {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(45deg, #ffd89b, #19547b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .level-name {
+      font-size: 1rem;
+      font-weight: 600;
+      opacity: 0.9;
+    }
+    
+    .slider-container {
+      position: relative;
+      margin: 25px 0;
+    }
+    
+    .slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 10px;
+      background: linear-gradient(90deg, #4ade80, #f59e0b, #ef4444);
+      outline: none;
+      opacity: 0.9;
+      transition: opacity 0.2s;
+    }
+    
+    .slider:hover {
+      opacity: 1;
+    }
+    
+    .slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border: 3px solid #6366f1;
+      transition: all 0.2s ease;
+    }
+    
+    .slider::-webkit-slider-thumb:hover {
+      transform: scale(1.1);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    }
+    
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    
+    .level-description-container {
+      margin-top: 15px;
+    }
+    
+    .level-description-toggle {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .level-description-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .level-description {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 15px;
+      margin-top: 8px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      border-left: 4px solid #6366f1;
+      display: none;
+    }
+    
+    .level-description.show {
+      display: block;
+    }
+    
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: center;
+    }
+    
+    .btn-full {
+      grid-column: 1 / -1;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(45deg, #6366f1, #8b5cf6);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+    }
+    
+    .btn-success {
+      background: linear-gradient(45deg, #10b981, #059669);
+      color: white;
+    }
+    
+    .btn-success:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .progress-container {
+      display: none;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 15px;
+      text-align: center;
+    }
+    
+    .progress-container.show {
+      display: block;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4ade80, #3b82f6);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+    
+    .progress-text {
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-top: 5px;
+    }
+    
+    .status {
+      text-align: center;
+      padding: 10px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      display: none;
+    }
+    
+    .status.success {
+      background: rgba(34, 197, 94, 0.2);
+      color: #bbf7d0;
+      display: block;
+    }
+    
+    .status.error {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fecaca;
+      display: block;
+    }
+    
+    .status.processing {
+      background: rgba(59, 130, 246, 0.2);
+      color: #bfdbfe;
+      display: block;
+    }
+    
+    .spinner {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.5s ease-in;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Make it easy!</h1>
+      <p>Rewrite or summarize any webpage</p>
+    </div>
+    
+    <div class="api-section fade-in">
+      <div class="section-header">
+        <h3>🔑 OpenAI API Setup</h3>
+        <span class="api-status" id="api-status">Not configured</span>
+      </div>
+      
+      <input type="password" id="api-key" class="api-input" 
+             placeholder="Paste your OpenAI API key (starts with sk-...)">
+      
+      <div class="api-help">
+        <details>
+          <summary>Where to get API key?</summary>
+          <div class="help-content">
+            <ol>
+              <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a></li>
+              <li>Sign in to your account</li>
+              <li>Click "Create new secret key"</li>
+              <li>Copy and paste it here</li>
+            </ol>
+            <p class="note">Your API key is stored locally and never shared</p>
+          </div>
+        </details>
+      </div>
+      
+      <button id="save-api-key" class="btn btn-secondary btn-full">Save API Key</button>
+    </div>
+    
+    <div class="level-selector fade-in">
+      <div class="level-display">
+        <span id="cefr-level" class="cefr-level">B1</span>
+        <span id="level-name" class="level-name">Intermediate</span>
+      </div>
+      
+      <div class="slider-container">
+        <input type="range" min="1" max="6" value="3" class="slider" id="cefr-slider">
+        <div class="slider-labels">
+          <span>A1</span>
+          <span>A2</span>
+          <span>B1</span>
+          <span>B2</span>
+          <span>C1</span>
+          <span>C2</span>
+        </div>
+      </div>
+      
+      <div class="level-description-container">
+        <button class="level-description-toggle" id="level-toggle">
+          <span>CEFR Level Explanation</span>
+          <span id="toggle-icon">▼</span>
+        </button>
+        <div id="level-description" class="level-description">
+          Can understand the main points of clear standard input on familiar matters regularly encountered in work, school, leisure, etc.
+        </div>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="rewrite-btn" class="btn btn-primary">Rewrite Page</button>
+      <button id="summarize-btn" class="btn btn-success">Summarize Page</button>
+      <button id="reset-btn" class="btn btn-secondary btn-full">Reset to Original</button>
+    </div>
+    
+    <div class="progress-container" id="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-text" id="progress-text">Processing: 0%</div>
+    </div>
+    
+    <div id="status" class="status"></div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
