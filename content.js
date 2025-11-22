@@ -1,5 +1,3 @@
-[file name]: content.js
-[file content begin]
 // Content script for text rewriting and summarization
 let originalTexts = new Map();
 let isRewritten = false;
@@ -93,34 +91,26 @@ async function rewriteTextElements(targetLevel, apiKey) {
     }
 }
 
-// Enhanced text rewriting with entity protection
+// Enhanced text rewriting with better error handling
 async function rewriteTextWithOpenAI(text, targetLevel, apiKey) {
     // Clean the text for processing
     const cleanText = text.trim().replace(/\s+/g, ' ').substring(0, 2000);
     
-    const prompt = `Rewrite the following text to match CEFR level ${targetLevel} English, BUT follow these CRITICAL rules:
-
-MANDATORY RULES:
-1. Keep the exact same meaning and context
-2. Change only vocabulary and sentence structure to match ${targetLevel} level
-3. Maintain the original tone and style
-4. Return ONLY the rewritten text, no explanations
-5. Keep the same overall length
-6. NEVER change or rewrite these specific elements - keep them EXACTLY as written:
-   - QUOTES: Anything in quotation marks ""
-   - NAMES: Person names, brand names, product names
-   - ADDRESSES: Street addresses, cities, countries, zip codes
-   - LOCATIONS: Place names, landmarks, buildings
-   - DATES: Any date format (January 1, 2024 or 01/01/2024)
-   - NUMBERS: Any numerical values, percentages, prices
-   - TECHNICAL TERMS: Domain-specific terminology
-   - PROPER NOUNS: Any capitalized specific names
+    const prompt = `Rewrite the following text to match CEFR level ${targetLevel} English. 
+    
+IMPORTANT INSTRUCTIONS:
+- Keep the exact same meaning and context
+- Change only vocabulary and sentence structure to match ${targetLevel} level
+- Maintain the original tone and style
+- Return ONLY the rewritten text, no explanations
+- Preserve any proper nouns, names, or technical terms
+- Keep the same overall length
 
 CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
 Original text: "${cleanText}"
 
-Rewritten text (with protected entities unchanged):`;
+Rewritten text:`;
 
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -134,7 +124,7 @@ Rewritten text (with protected entities unchanged):`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a professional text rewriter that adapts content to specific CEFR English levels while preserving exact meaning, tone, and context. You MUST preserve protected entities exactly as written.'
+                        content: 'You are a professional text rewriter that adapts content to specific CEFR English levels while preserving exact meaning, tone, and context.'
                     },
                     {
                         role: 'user',
@@ -168,14 +158,13 @@ Rewritten text (with protected entities unchanged):`;
 
 // Replace element text content while preserving all HTML structure and styling
 function replaceElementTextContent(element, newText) {
-    // Store the original HTML structure EXACTLY as it was
-    const originalHTML = element.innerHTML;
+    // Store original styles and classes
     const originalClass = element.className;
     const originalStyle = element.style.cssText;
     const originalAttributes = {};
     
     // Store important attributes
-    ['id', 'style', 'class'].forEach(attr => {
+    ['id', 'style', 'class', 'data-*'].forEach(attr => {
         if (element.hasAttribute(attr)) {
             originalAttributes[attr] = element.getAttribute(attr);
         }
@@ -186,34 +175,13 @@ function replaceElementTextContent(element, newText) {
     element.style.opacity = '0.7';
     
     setTimeout(() => {
-        // SIMPLIFIED APPROACH: Clear and replace to avoid double text
-        // This ensures no original text remains while preserving structure
+        // COMPLETELY REPLACE the content with the new text
+        // This ensures no original text remains in child nodes
+        const textNode = document.createTextNode(newText);
+        element.innerHTML = ''; // Clear all existing content
+        element.appendChild(textNode);
         
-        // Store all child elements and their positions
-        const childElements = [];
-        const childNodes = Array.from(element.childNodes);
-        
-        childNodes.forEach(node => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                childElements.push({
-                    node: node,
-                    html: node.outerHTML
-                });
-            }
-        });
-        
-        if (childElements.length === 0) {
-            // Simple case: element contains only text
-            element.textContent = newText;
-        } else {
-            // Complex case: element contains HTML elements
-            // Replace the entire content but preserve structure
-            const textNode = document.createTextNode(newText);
-            element.innerHTML = '';
-            element.appendChild(textNode);
-        }
-        
-        // Restore original styles and classes EXACTLY
+        // Restore original styles and classes
         element.className = originalClass;
         element.style.cssText = originalStyle;
         
@@ -252,14 +220,12 @@ async function summarizePageContent(apiKey, targetLevel) {
     }
 }
 
-// Create summary using OpenAI with entity protection
+// Create summary using OpenAI
 async function createSummary(textContent, targetLevel, apiKey) {
     const wordCount = textContent.split(/\s+/).length;
     const targetWordCount = wordCount > 500 ? '500-600' : 'maximum 100';
     
     const prompt = `Create a ${targetWordCount} word summary of the following text at CEFR ${targetLevel} level.
-
-IMPORTANT: Preserve exact quotes, names, addresses, locations, dates, and numbers without change.
 
 CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
@@ -280,7 +246,7 @@ Summary (${targetLevel} level):`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a professional summarizer that creates concise summaries at specific CEFR English levels while preserving protected entities.'
+                        content: 'You are a professional summarizer that creates concise summaries at specific CEFR English levels.'
                     },
                     {
                         role: 'user',
@@ -507,4 +473,3 @@ function resetPageContent() {
         document.body.style.opacity = '1';
     }, 300);
 }
-[file content end]
