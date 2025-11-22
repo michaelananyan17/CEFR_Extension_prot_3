@@ -98,9 +98,6 @@ async function rewriteTextWithOpenAI(text, targetLevel, apiKey) {
     // Clean the text for processing
     const cleanText = text.trim().replace(/\s+/g, ' ').substring(0, 2000);
     
-    // Extract protected entities from the text
-    const protectedEntities = extractProtectedEntities(cleanText);
-    
     const prompt = `Rewrite the following text to match CEFR level ${targetLevel} English, BUT follow these CRITICAL rules:
 
 MANDATORY RULES:
@@ -118,9 +115,6 @@ MANDATORY RULES:
    - NUMBERS: Any numerical values, percentages, prices
    - TECHNICAL TERMS: Domain-specific terminology
    - PROPER NOUNS: Any capitalized specific names
-
-PROTECTED ENTITIES THAT MUST REMAIN UNCHANGED:
-${protectedEntities.map(entity => `- "${entity.text}" (type: ${entity.type})`).join('\n')}
 
 CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
@@ -172,52 +166,6 @@ Rewritten text (with protected entities unchanged):`;
     }
 }
 
-// Function to identify and extract protected entities
-function extractProtectedEntities(text) {
-    const entities = [];
-    
-    // Extract quotes (anything between quotation marks)
-    const quoteMatches = text.match(/"[^"]+"/g) || [];
-    quoteMatches.forEach(quote => {
-        entities.push({ type: 'QUOTE', text: quote });
-    });
-    
-    // Extract names (capitalized words in specific contexts)
-    const nameMatches = text.match(/\b[A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) || [];
-    nameMatches.forEach(name => {
-        // Avoid matching sentence starters
-        if (!name.match(/^(The|A|An|This|That|These|Those|In|On|At)\b/)) {
-            entities.push({ type: 'NAME', text: name });
-        }
-    });
-    
-    // Extract addresses (street patterns)
-    const addressMatches = text.match(/\b\d+\s+[A-Za-z0-9]+\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl)\b/gi) || [];
-    addressMatches.forEach(address => {
-        entities.push({ type: 'ADDRESS', text: address });
-    });
-    
-    // Extract locations (common location indicators)
-    const locationMatches = text.match(/\b(?:[A-Z][a-z]+\s)+(?:City|Town|Village|County|State|Country|Park|Lake|River|Mountain|Mount|Beach|Island)\b/g) || [];
-    locationMatches.forEach(location => {
-        entities.push({ type: 'LOCATION', text: location });
-    });
-    
-    // Extract dates (common date formats)
-    const dateMatches = text.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b|\b\d{1,2}\/\d{1,2}\/\d{4}\b/g) || [];
-    dateMatches.forEach(date => {
-        entities.push({ type: 'DATE', text: date });
-    });
-    
-    // Extract numbers with symbols (prices, percentages)
-    const numberMatches = text.match(/\$\d+(?:\.\d+)?|\d+(?:\.\d+)?%|\d+\.\d+/g) || [];
-    numberMatches.forEach(number => {
-        entities.push({ type: 'NUMBER', text: number });
-    });
-    
-    return entities;
-}
-
 // Replace element text content while preserving all HTML structure and styling
 function replaceElementTextContent(element, newText) {
     // Store the original HTML structure EXACTLY as it was
@@ -227,7 +175,7 @@ function replaceElementTextContent(element, newText) {
     const originalAttributes = {};
     
     // Store important attributes
-    ['id', 'style', 'class', 'data-*'].forEach(attr => {
+    ['id', 'style', 'class'].forEach(attr => {
         if (element.hasAttribute(attr)) {
             originalAttributes[attr] = element.getAttribute(attr);
         }
@@ -238,48 +186,31 @@ function replaceElementTextContent(element, newText) {
     element.style.opacity = '0.7';
     
     setTimeout(() => {
-        // COMPLETELY NEW APPROACH: Use the original HTML structure but replace text content
-        // This preserves ALL formatting while ensuring no double text
+        // SIMPLIFIED APPROACH: Clear and replace to avoid double text
+        // This ensures no original text remains while preserving structure
         
-        // First, restore the original HTML structure exactly
-        element.innerHTML = originalHTML;
+        // Store all child elements and their positions
+        const childElements = [];
+        const childNodes = Array.from(element.childNodes);
         
-        // Now replace text content while preserving HTML tags
-        const textNodes = getTextNodes(element);
-        
-        if (textNodes.length === 0) {
-            // If no text nodes found, use simple replacement
-            element.textContent = newText;
-        } else if (textNodes.length === 1) {
-            // Simple case: only one text node
-            textNodes[0].textContent = newText;
-        } else {
-            // Complex case: multiple text nodes - find the main content node
-            let mainTextNode = null;
-            let maxLength = 0;
-            
-            textNodes.forEach(node => {
-                const textLength = node.textContent.trim().length;
-                if (textLength > maxLength && textLength > 10) {
-                    mainTextNode = node;
-                    maxLength = textLength;
-                }
-            });
-            
-            if (mainTextNode) {
-                // Replace the main text node with new content
-                mainTextNode.textContent = newText;
-                
-                // Remove other text nodes to prevent double text
-                textNodes.forEach(node => {
-                    if (node !== mainTextNode && node.parentNode) {
-                        node.textContent = ''; // Clear content but keep node to preserve structure
-                    }
+        childNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                childElements.push({
+                    node: node,
+                    html: node.outerHTML
                 });
-            } else {
-                // Fallback: replace entire content
-                element.textContent = newText;
             }
+        });
+        
+        if (childElements.length === 0) {
+            // Simple case: element contains only text
+            element.textContent = newText;
+        } else {
+            // Complex case: element contains HTML elements
+            // Replace the entire content but preserve structure
+            const textNode = document.createTextNode(newText);
+            element.innerHTML = '';
+            element.appendChild(textNode);
         }
         
         // Restore original styles and classes EXACTLY
@@ -326,13 +257,9 @@ async function createSummary(textContent, targetLevel, apiKey) {
     const wordCount = textContent.split(/\s+/).length;
     const targetWordCount = wordCount > 500 ? '500-600' : 'maximum 100';
     
-    // Extract protected entities for the summary too
-    const protectedEntities = extractProtectedEntities(textContent);
-    
     const prompt = `Create a ${targetWordCount} word summary of the following text at CEFR ${targetLevel} level.
 
-IMPORTANT: Preserve these exact elements without change:
-${protectedEntities.map(entity => `- ${entity.text} (${entity.type})`).join('\n')}
+IMPORTANT: Preserve exact quotes, names, addresses, locations, dates, and numbers without change.
 
 CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
@@ -580,3 +507,4 @@ function resetPageContent() {
         document.body.style.opacity = '1';
     }, 300);
 }
+[file content end]
