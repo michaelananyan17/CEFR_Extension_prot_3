@@ -94,16 +94,20 @@ async function rewriteTextElements(targetLevel, apiKey) {
 async function rewriteTextWithOpenAI(text, targetLevel, apiKey) {
     const cleanText = text.trim().replace(/\s+/g, ' ').substring(0, 2000);
     
-    // FIX FOR BUG 2: Prompt includes instruction to preserve symbols
-    const prompt = `Rewrite this text to CEFR level ${targetLevel}.
+    // FIX FOR BUG 1 & 2: Strict "Data Replacement" prompt structure
+    // We use delimiters and negative constraints to prevent the model from being "chatty"
+    const prompt = `Transform the text inside the triple quotes to CEFR level ${targetLevel}.
 
 RULES:
-1. OUTPUT ONLY THE REWRITTEN TEXT. DO NOT REPEAT THE ORIGINAL.
-2. Preserve proper names, locations, and quotes exactly.
-3. Keep all parenthesis (), brackets [], and bullet points.
-4. Maintain the same tone.
+1. Return ONLY the transformed text.
+2. DO NOT Include the original text.
+3. DO NOT add introductions like "Here is the text".
+4. Preserve ALL names, locations, quotes, and parenthesis () [].
 
-Input: "${cleanText}"`;
+Text to Transform:
+"""${cleanText}"""
+
+Output:`;
 
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -117,7 +121,7 @@ Input: "${cleanText}"`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a strict text replacement engine. You output only the result. You never repeat the input.'
+                        content: 'You are a text transformation engine. You output only the result. You do not chat.'
                     },
                     {
                         role: 'user',
@@ -141,7 +145,8 @@ Input: "${cleanText}"`;
             throw new Error('OpenAI returned empty response');
         }
 
-        // FIX FOR BUG 1: Fuzzy cleaning to remove original text if appended
+        // FIX FOR BUG 1: Aggressive Cleaning
+        // If the original text is found inside the response (and is substantial), remove it.
         return cleanRewrittenText(rewrittenText, cleanText);
         
     } catch (error) {
@@ -150,29 +155,31 @@ Input: "${cleanText}"`;
     }
 }
 
-// Helper function to detect and remove original text from output
+// Helper function to strip original text if it appears
 function cleanRewrittenText(rewritten, original) {
-    // Normalize strings (remove whitespace and punctuation) to check for content repetition
-    // regardless of minor formatting differences
-    const normalize = (str) => str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    
-    const normRewritten = normalize(rewritten);
-    const normOriginal = normalize(original);
+    // If original text is very short, fuzzy matching is dangerous. Only clean if > 15 chars.
+    if (original.length < 15) return rewritten;
 
-    // If the rewritten text ends with the original text (common hallucination)
-    if (normRewritten.length > normOriginal.length && normRewritten.endsWith(normOriginal)) {
-        // We need to find where the original text starts in the raw string to cut it off
-        // Heuristic: split by double newline or assume the second half is the copy
-        const splitParts = rewritten.split(/\n+/);
-        if (splitParts.length > 1) {
-            // Return the first part as the rewrite
-            return splitParts[0].trim();
-        }
+    // 1. Check for exact inclusion
+    if (rewritten.includes(original)) {
+        // If the output is just the original repeated, return it (rewrite failed but better than duplication)
+        if (rewritten.length === original.length) return rewritten;
+        
+        // Otherwise, REMOVE the original text from the string
+        return rewritten.replace(original, '').trim();
     }
 
-    // Fallback: if it contains the exact string (rare but possible)
-    if (rewritten.includes(original) && rewritten.length > original.length * 1.2) {
-        return rewritten.replace(original, '').trim();
+    // 2. Check for "Rewritten... Original" pattern where original might have minor diffs
+    // We check if the last 50% of the string matches the original roughly
+    const threshold = Math.floor(original.length * 0.8);
+    const tail = rewritten.slice(-original.length - 10); // Look at the end
+    
+    // If the tail contains a significant chunk of the original, chop it
+    if (tail.includes(original.substring(0, threshold))) {
+        const cutIndex = rewritten.lastIndexOf(original.substring(0, threshold));
+        if (cutIndex > 0) {
+            return rewritten.substring(0, cutIndex).trim();
+        }
     }
 
     return rewritten;
@@ -180,16 +187,15 @@ function cleanRewrittenText(rewritten, original) {
 
 // Replace element text content while strictly enforcing visual styles
 function replaceElementTextContent(element, newText) {
-    // FIX FOR BUG 3: Capture ALL typography styles
+    // FIX FOR BUG 3: Capture Computed Styles explicitly
     const computedStyle = window.getComputedStyle(element);
     
-    // We capture these specifically to fix the "slanted/bold" issue
     const forcedStyles = {
         fontSize: computedStyle.fontSize,
         fontFamily: computedStyle.fontFamily,
-        fontWeight: computedStyle.fontWeight,      // Handles Bold
-        fontStyle: computedStyle.fontStyle,        // Handles Slanted/Italic
-        textDecoration: computedStyle.textDecoration, // Handles Underline
+        fontWeight: computedStyle.fontWeight,       // Captures Bold
+        fontStyle: computedStyle.fontStyle,         // Captures Italic/Slanted
+        textDecoration: computedStyle.textDecoration, // Captures Underline
         textTransform: computedStyle.textTransform,
         lineHeight: computedStyle.lineHeight,
         color: computedStyle.color,
@@ -213,34 +219,39 @@ function replaceElementTextContent(element, newText) {
     element.style.opacity = '0.7';
     
     setTimeout(() => {
-        // Logic to replace text while preserving minimal structure
+        // REWORKED LOGIC: Prioritize text node replacement but fall back gracefully
         if (element.childNodes.length === 1 && element.childNodes[0].nodeType === Node.TEXT_NODE) {
             element.textContent = newText;
         } else {
             const textNodes = getTextNodes(element);
             if (textNodes.length > 0) {
+                // Find the largest text node to act as the primary container
+                // We avoid picking small whitespace nodes
                 let mainTextNode = textNodes.find(node => 
-                    node.textContent.trim().length > 10 && 
+                    node.textContent.trim().length > 5 && 
                     !node.parentElement.tagName.match(/^(SCRIPT|STYLE|NOSCRIPT)$/i)
                 ) || textNodes[0];
                 
                 if (mainTextNode) {
                     mainTextNode.textContent = newText;
-                    // Cleanup small fragments
+                    
+                    // We do NOT delete other nodes anymore to prevent breaking structure
+                    // Instead, we empty them if they are just fragments of the same sentence
                     textNodes.forEach(node => {
-                        if (node !== mainTextNode && node.textContent.trim().length < 5) {
-                            node.parentNode.removeChild(node);
+                        if (node !== mainTextNode && node.textContent.trim().length > 0) {
+                            // Only clear if it looks like part of the sentence we just rewrote
+                            // Heuristic: if it's small, wipe it.
+                            if (node.textContent.length < 50) {
+                                node.textContent = '';
+                            }
                         }
                     });
                 } else {
-                    const textNode = document.createTextNode(newText);
-                    element.innerHTML = '';
-                    element.appendChild(textNode);
+                    // Fallback
+                    element.textContent = newText;
                 }
             } else {
-                const textNode = document.createTextNode(newText);
-                element.innerHTML = '';
-                element.appendChild(textNode);
+                element.textContent = newText;
             }
         }
         
@@ -252,12 +263,12 @@ function replaceElementTextContent(element, newText) {
             element.setAttribute(attr, originalAttributes[attr]);
         });
         
-        // CRITICAL FIX: Re-apply the captured typography styles
-        // This forces the element to look exactly like it did, including bold/italics
+        // CRITICAL FIX: Force-apply the captured typography styles to the CONTAINER
+        // This ensures that even if we lost an <i> tag inside, the <p> container becomes italic
         element.style.fontSize = forcedStyles.fontSize;
         element.style.fontFamily = forcedStyles.fontFamily;
         element.style.fontWeight = forcedStyles.fontWeight;
-        element.style.fontStyle = forcedStyles.fontStyle; // Fix for slanted text
+        element.style.fontStyle = forcedStyles.fontStyle;
         element.style.textDecoration = forcedStyles.textDecoration;
         element.style.textTransform = forcedStyles.textTransform;
         element.style.lineHeight = forcedStyles.lineHeight;
