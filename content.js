@@ -90,25 +90,20 @@ async function rewriteTextElements(targetLevel, apiKey) {
     }
 }
 
-// Enhanced text rewriting with better error handling and Strict Restrictions
+// Enhanced text rewriting with strict output control
 async function rewriteTextWithOpenAI(text, targetLevel, apiKey) {
-    // Clean the text for processing
     const cleanText = text.trim().replace(/\s+/g, ' ').substring(0, 2000);
     
-    // FIX FOR BUG 2: Specific instructions for Entities and Quotes
-    const prompt = `Rewrite the following text to match CEFR level ${targetLevel} English.
+    // FIX FOR BUG 2: Prompt includes instruction to preserve symbols
+    const prompt = `Rewrite this text to CEFR level ${targetLevel}.
 
-STRICT RULES:
-1. Do NOT include the original text in your output. Return ONLY the rewritten version.
-2. ENTITY PRESERVATION: Do NOT translate or modify:
-   - Proper Names (people, companies, brands)
-   - Street Addresses and Locations
-   - Text inside quotation marks (""). Keep quotes EXACTLY as they appear in the original.
-3. Maintain the exact same meaning, tone, and length.
+RULES:
+1. OUTPUT ONLY THE REWRITTEN TEXT. DO NOT REPEAT THE ORIGINAL.
+2. Preserve proper names, locations, and quotes exactly.
+3. Keep all parenthesis (), brackets [], and bullet points.
+4. Maintain the same tone.
 
-Original text: "${cleanText}"
-
-Rewritten text:`;
+Input: "${cleanText}"`;
 
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -122,15 +117,15 @@ Rewritten text:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a text rewriter. You never repeat the input text. You preserve names, addresses, and quotes exactly as they are.'
+                        content: 'You are a strict text replacement engine. You output only the result. You never repeat the input.'
                     },
                     {
                         role: 'user',
                         content: prompt
                     }
                 ],
-                max_tokens: Math.min(3000, cleanText.length * 3), // Increased buffer to prevent cutoff
-                temperature: 0.3 
+                max_tokens: Math.min(3000, cleanText.length * 3),
+                temperature: 0.3
             })
         });
         
@@ -146,14 +141,8 @@ Rewritten text:`;
             throw new Error('OpenAI returned empty response');
         }
 
-        // FIX FOR BUG 1: Post-processing to strip original text if it appears
-        // Sometimes models append the original text at the end or start despite instructions.
-        if (rewrittenText.includes(cleanText) && cleanText.length > 20) {
-            // If the rewritten text contains the ENTIRE original text, try to remove it
-            rewrittenText = rewrittenText.replace(cleanText, '').trim();
-        }
-        
-        return rewrittenText;
+        // FIX FOR BUG 1: Fuzzy cleaning to remove original text if appended
+        return cleanRewrittenText(rewrittenText, cleanText);
         
     } catch (error) {
         console.error('OpenAI API Error:', error);
@@ -161,48 +150,75 @@ Rewritten text:`;
     }
 }
 
-// Replace element text content while preserving all HTML structure and styling
+// Helper function to detect and remove original text from output
+function cleanRewrittenText(rewritten, original) {
+    // Normalize strings (remove whitespace and punctuation) to check for content repetition
+    // regardless of minor formatting differences
+    const normalize = (str) => str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    
+    const normRewritten = normalize(rewritten);
+    const normOriginal = normalize(original);
+
+    // If the rewritten text ends with the original text (common hallucination)
+    if (normRewritten.length > normOriginal.length && normRewritten.endsWith(normOriginal)) {
+        // We need to find where the original text starts in the raw string to cut it off
+        // Heuristic: split by double newline or assume the second half is the copy
+        const splitParts = rewritten.split(/\n+/);
+        if (splitParts.length > 1) {
+            // Return the first part as the rewrite
+            return splitParts[0].trim();
+        }
+    }
+
+    // Fallback: if it contains the exact string (rare but possible)
+    if (rewritten.includes(original) && rewritten.length > original.length * 1.2) {
+        return rewritten.replace(original, '').trim();
+    }
+
+    return rewritten;
+}
+
+// Replace element text content while strictly enforcing visual styles
 function replaceElementTextContent(element, newText) {
-    // FIX FOR BUG 3: Capture Computed Styles
-    // We capture the final rendered look (font, size, color) before touching the element
+    // FIX FOR BUG 3: Capture ALL typography styles
     const computedStyle = window.getComputedStyle(element);
+    
+    // We capture these specifically to fix the "slanted/bold" issue
     const forcedStyles = {
         fontSize: computedStyle.fontSize,
         fontFamily: computedStyle.fontFamily,
-        fontWeight: computedStyle.fontWeight,
+        fontWeight: computedStyle.fontWeight,      // Handles Bold
+        fontStyle: computedStyle.fontStyle,        // Handles Slanted/Italic
+        textDecoration: computedStyle.textDecoration, // Handles Underline
+        textTransform: computedStyle.textTransform,
         lineHeight: computedStyle.lineHeight,
         color: computedStyle.color,
         textAlign: computedStyle.textAlign,
         letterSpacing: computedStyle.letterSpacing
     };
 
-    // Store original styles and classes (Your original logic)
+    // Store original styles for reset functionality
     const originalClass = element.className;
     const originalStyle = element.style.cssText;
     const originalAttributes = {};
     
-    // Store important attributes
     ['id', 'style', 'class', 'data-*'].forEach(attr => {
         if (element.hasAttribute(attr)) {
             originalAttributes[attr] = element.getAttribute(attr);
         }
     });
     
-    // Create smooth transition
+    // Visual transition
     element.style.transition = 'opacity 0.3s ease';
     element.style.opacity = '0.7';
     
     setTimeout(() => {
-        // Replace text content while preserving child elements if they exist (Your original logic)
+        // Logic to replace text while preserving minimal structure
         if (element.childNodes.length === 1 && element.childNodes[0].nodeType === Node.TEXT_NODE) {
-            // Simple case: element only contains text
             element.textContent = newText;
         } else {
-            // Complex case: element contains other HTML elements
-            // Find and replace the main text content while preserving child elements
             const textNodes = getTextNodes(element);
             if (textNodes.length > 0) {
-                // Replace the primary text node (usually the first substantial one)
                 let mainTextNode = textNodes.find(node => 
                     node.textContent.trim().length > 10 && 
                     !node.parentElement.tagName.match(/^(SCRIPT|STYLE|NOSCRIPT)$/i)
@@ -210,41 +226,40 @@ function replaceElementTextContent(element, newText) {
                 
                 if (mainTextNode) {
                     mainTextNode.textContent = newText;
-                    
-                    // Remove other insignificant text nodes to avoid duplicates
+                    // Cleanup small fragments
                     textNodes.forEach(node => {
                         if (node !== mainTextNode && node.textContent.trim().length < 5) {
                             node.parentNode.removeChild(node);
                         }
                     });
                 } else {
-                    // Fallback: clear and add new text
                     const textNode = document.createTextNode(newText);
                     element.innerHTML = '';
                     element.appendChild(textNode);
                 }
             } else {
-                // No text nodes found, append new text
                 const textNode = document.createTextNode(newText);
                 element.innerHTML = '';
                 element.appendChild(textNode);
             }
         }
         
-        // Restore original styles and classes
+        // Restore base attributes
         element.className = originalClass;
         element.style.cssText = originalStyle;
         
-        // Restore attributes
         Object.keys(originalAttributes).forEach(attr => {
             element.setAttribute(attr, originalAttributes[attr]);
         });
         
-        // FIX FOR BUG 3: Apply Captured Computed Styles
-        // This ensures strict visual matching even if inner HTML structure changed slightly
+        // CRITICAL FIX: Re-apply the captured typography styles
+        // This forces the element to look exactly like it did, including bold/italics
         element.style.fontSize = forcedStyles.fontSize;
         element.style.fontFamily = forcedStyles.fontFamily;
         element.style.fontWeight = forcedStyles.fontWeight;
+        element.style.fontStyle = forcedStyles.fontStyle; // Fix for slanted text
+        element.style.textDecoration = forcedStyles.textDecoration;
+        element.style.textTransform = forcedStyles.textTransform;
         element.style.lineHeight = forcedStyles.lineHeight;
         element.style.color = forcedStyles.color;
         element.style.textAlign = forcedStyles.textAlign;
@@ -258,17 +273,14 @@ function replaceElementTextContent(element, newText) {
 // Main function to summarize page content
 async function summarizePageContent(apiKey, targetLevel) {
     try {
-        // Extract main content from the page
         const textContent = extractMainContent();
         
         if (!textContent.trim()) {
             throw new Error('No readable text content found on this page');
         }
         
-        // Create summary
         const summary = await createSummary(textContent, targetLevel, apiKey);
         
-        // Download as text file instead of PDF to avoid binary issues
         downloadSummaryAsText(summary, targetLevel);
         
         return { success: true, summaryLength: summary.length };
@@ -284,7 +296,6 @@ async function createSummary(textContent, targetLevel, apiKey) {
     const wordCount = textContent.split(/\s+/).length;
     const targetWordCount = wordCount > 500 ? '500-600' : 'maximum 100';
     
-    // FIX FOR BUG 2 in Summaries: Explicit restriction in prompt
     const prompt = `Create a ${targetWordCount} word summary of the following text at CEFR ${targetLevel} level.
 
 RESTRICTIONS:
@@ -335,12 +346,11 @@ Summary (${targetLevel} level):`;
     }
 }
 
-// Download summary as text file (fix for PDF binary issue)
+// Download summary as text file
 function downloadSummaryAsText(summary, targetLevel) {
     const websiteName = document.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
     const filename = `${websiteName}_${targetLevel}_summary.txt`;
     
-    // Create text content with proper formatting
     const textContent = `
 PAGE SUMMARY
 ============
@@ -357,7 +367,6 @@ ${summary}
 Generated by Make it easy! Chrome Extension
     `;
     
-    // Create blob and download
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -371,12 +380,10 @@ Generated by Make it easy! Chrome Extension
 
 // ========== UTILITY FUNCTIONS ==========
 
-// Store original text content with better element selection
-// RESTORED ORIGINAL SELECTOR LOGIC as requested
+// Store original text content
 function storeOriginalTexts() {
     originalTexts.clear();
     
-    // More selective element targeting to preserve layout
     const textElements = document.querySelectorAll(`
         p, h1, h2, h3, h4, h5, h6,
         article p, article h1, article h2, article h3,
@@ -445,7 +452,6 @@ function extractMainContent() {
     
     let mainContent = '';
     
-    // Try to find main content containers first
     for (const selector of contentSelectors) {
         const element = document.querySelector(selector);
         if (element && getTextContentLength(element) > 100) {
@@ -454,11 +460,8 @@ function extractMainContent() {
         }
     }
     
-    // If no main content found, use body text but exclude navigation
     if (!mainContent || mainContent.length < 100) {
         const body = document.body.cloneNode(true);
-        
-        // Remove common navigation and non-content elements
         const excludeSelectors = [
             'nav', 'header', 'footer', '.nav', '.header', '.footer', 
             '.menu', '.sidebar', '.ad', '.advertisement', '.banner',
@@ -468,29 +471,24 @@ function extractMainContent() {
             const elements = body.querySelectorAll(selector);
             elements.forEach(el => el.remove());
         });
-        
         mainContent = body.textContent;
     }
     
-    // Clean up the text
     return cleanTextContent(mainContent);
 }
 
-// Get text content length
 function getTextContentLength(element) {
     return element.textContent.replace(/\s+/g, ' ').trim().length;
 }
 
-// Clean text content
 function cleanTextContent(text) {
     return text
         .replace(/\s+/g, ' ')
         .replace(/\n+/g, '\n')
         .trim()
-        .substring(0, 12000); // Limit to avoid token limits
+        .substring(0, 12000);
 }
 
-// Get CEFR level guidelines
 function getLevelGuidelines(level) {
     const guidelines = {
         'A1': 'Use very basic phrases and simple vocabulary. Short sentences. Everyday expressions.',
@@ -504,10 +502,8 @@ function getLevelGuidelines(level) {
     return guidelines[level] || 'Use appropriate language for the specified level.';
 }
 
-// Get text nodes from an element
 function getTextNodes(element) {
     const textNodes = [];
-    
     function findTextNodes(node) {
         if (node.nodeType === Node.TEXT_NODE) {
             textNodes.push(node);
@@ -515,12 +511,10 @@ function getTextNodes(element) {
             node.childNodes.forEach(findTextNodes);
         }
     }
-    
     findTextNodes(element);
     return textNodes;
 }
 
-// Reset page to original content
 function resetPageContent() {
     if (!isRewritten) return;
     
@@ -530,6 +524,8 @@ function resetPageContent() {
         item.element.style.fontSize = '';
         item.element.style.fontFamily = '';
         item.element.style.fontWeight = '';
+        item.element.style.fontStyle = ''; // Reset italics
+        item.element.style.textDecoration = ''; // Reset underline
         item.element.style.lineHeight = '';
         item.element.style.color = '';
         item.element.style.textAlign = '';
@@ -537,7 +533,6 @@ function resetPageContent() {
     
     isRewritten = false;
     
-    // Smooth transition
     document.body.style.transition = 'opacity 0.3s ease';
     document.body.style.opacity = '0.8';
     setTimeout(() => {
