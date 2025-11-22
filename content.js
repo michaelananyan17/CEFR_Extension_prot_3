@@ -1,3 +1,5 @@
+[file name]: content.js
+[file content begin]
 // Content script for text rewriting and summarization
 let originalTexts = new Map();
 let isRewritten = false;
@@ -24,6 +26,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (request.action === 'updateProgress') {
+        // Could be used for progress updates in future
         sendResponse({ success: true });
     }
 });
@@ -90,24 +93,26 @@ async function rewriteTextElements(targetLevel, apiKey) {
     }
 }
 
-// Enhanced text rewriting with strict output control
+// Enhanced text rewriting with better error handling
 async function rewriteTextWithOpenAI(text, targetLevel, apiKey) {
+    // Clean the text for processing
     const cleanText = text.trim().replace(/\s+/g, ' ').substring(0, 2000);
     
-    // FIX FOR BUG 1 & 2: Strict "Data Replacement" prompt structure
-    // We use delimiters and negative constraints to prevent the model from being "chatty"
-    const prompt = `Transform the text inside the triple quotes to CEFR level ${targetLevel}.
+    const prompt = `Rewrite the following text to match CEFR level ${targetLevel} English. 
+    
+IMPORTANT INSTRUCTIONS:
+- Keep the exact same meaning and context
+- Change only vocabulary and sentence structure to match ${targetLevel} level
+- Maintain the original tone and style
+- Return ONLY the rewritten text, no explanations
+- Preserve any proper nouns, names, or technical terms
+- Keep the same overall length
 
-RULES:
-1. Return ONLY the transformed text.
-2. DO NOT Include the original text.
-3. DO NOT add introductions like "Here is the text".
-4. Preserve ALL names, locations, quotes, and parenthesis () [].
+CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
-Text to Transform:
-"""${cleanText}"""
+Original text: "${cleanText}"
 
-Output:`;
+Rewritten text:`;
 
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -121,15 +126,15 @@ Output:`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a text transformation engine. You output only the result. You do not chat.'
+                        content: 'You are a professional text rewriter that adapts content to specific CEFR English levels while preserving exact meaning, tone, and context.'
                     },
                     {
                         role: 'user',
                         content: prompt
                     }
                 ],
-                max_tokens: Math.min(3000, cleanText.length * 3),
-                temperature: 0.3
+                max_tokens: Math.min(2500, cleanText.length * 2),
+                temperature: 0.3 // Lower temperature for more consistent rewriting
             })
         });
         
@@ -139,15 +144,13 @@ Output:`;
         }
         
         const data = await response.json();
-        let rewrittenText = data.choices[0].message.content.trim();
+        const rewrittenText = data.choices[0].message.content.trim();
         
         if (!rewrittenText) {
             throw new Error('OpenAI returned empty response');
         }
-
-        // FIX FOR BUG 1: Aggressive Cleaning
-        // If the original text is found inside the response (and is substantial), remove it.
-        return cleanRewrittenText(rewrittenText, cleanText);
+        
+        return rewrittenText;
         
     } catch (error) {
         console.error('OpenAI API Error:', error);
@@ -155,125 +158,87 @@ Output:`;
     }
 }
 
-// Helper function to strip original text if it appears
-function cleanRewrittenText(rewritten, original) {
-    // If original text is very short, fuzzy matching is dangerous. Only clean if > 15 chars.
-    if (original.length < 15) return rewritten;
-
-    // 1. Check for exact inclusion
-    if (rewritten.includes(original)) {
-        // If the output is just the original repeated, return it (rewrite failed but better than duplication)
-        if (rewritten.length === original.length) return rewritten;
-        
-        // Otherwise, REMOVE the original text from the string
-        return rewritten.replace(original, '').trim();
-    }
-
-    // 2. Check for "Rewritten... Original" pattern where original might have minor diffs
-    // We check if the last 50% of the string matches the original roughly
-    const threshold = Math.floor(original.length * 0.8);
-    const tail = rewritten.slice(-original.length - 10); // Look at the end
-    
-    // If the tail contains a significant chunk of the original, chop it
-    if (tail.includes(original.substring(0, threshold))) {
-        const cutIndex = rewritten.lastIndexOf(original.substring(0, threshold));
-        if (cutIndex > 0) {
-            return rewritten.substring(0, cutIndex).trim();
-        }
-    }
-
-    return rewritten;
-}
-
-// Replace element text content while strictly enforcing visual styles
+// Replace element text content while preserving all HTML structure and styling
 function replaceElementTextContent(element, newText) {
-    // FIX FOR BUG 3: Capture Computed Styles explicitly
-    const computedStyle = window.getComputedStyle(element);
-    
-    const forcedStyles = {
-        fontSize: computedStyle.fontSize,
-        fontFamily: computedStyle.fontFamily,
-        fontWeight: computedStyle.fontWeight,       // Captures Bold
-        fontStyle: computedStyle.fontStyle,         // Captures Italic/Slanted
-        textDecoration: computedStyle.textDecoration, // Captures Underline
-        textTransform: computedStyle.textTransform,
-        lineHeight: computedStyle.lineHeight,
-        color: computedStyle.color,
-        textAlign: computedStyle.textAlign,
-        letterSpacing: computedStyle.letterSpacing
-    };
-
-    // Store original styles for reset functionality
+    // Store original styles and classes
     const originalClass = element.className;
     const originalStyle = element.style.cssText;
     const originalAttributes = {};
     
+    // Store important attributes
     ['id', 'style', 'class', 'data-*'].forEach(attr => {
         if (element.hasAttribute(attr)) {
             originalAttributes[attr] = element.getAttribute(attr);
         }
     });
     
-    // Visual transition
+    // Create smooth transition
     element.style.transition = 'opacity 0.3s ease';
     element.style.opacity = '0.7';
     
     setTimeout(() => {
-        // REWORKED LOGIC: Prioritize text node replacement but fall back gracefully
-        if (element.childNodes.length === 1 && element.childNodes[0].nodeType === Node.TEXT_NODE) {
+        // SIMPLIFIED APPROACH: Replace ALL text content while preserving element structure
+        // This ensures we don't accidentally leave original text behind
+        
+        // Check if element has only text content (no child elements)
+        const hasOnlyText = element.children.length === 0 && 
+                           element.textContent.trim() === element.innerHTML.trim();
+        
+        if (hasOnlyText) {
+            // Simple case: element contains only text
             element.textContent = newText;
         } else {
+            // Complex case: element contains other HTML elements
+            // We need to replace text content while preserving child structure
             const textNodes = getTextNodes(element);
+            
             if (textNodes.length > 0) {
-                // Find the largest text node to act as the primary container
-                // We avoid picking small whitespace nodes
-                let mainTextNode = textNodes.find(node => 
-                    node.textContent.trim().length > 5 && 
-                    !node.parentElement.tagName.match(/^(SCRIPT|STYLE|NOSCRIPT)$/i)
-                ) || textNodes[0];
+                // Find the main text node (the one with substantial content)
+                let mainTextNode = null;
+                let maxLength = 0;
+                
+                textNodes.forEach(node => {
+                    const textLength = node.textContent.trim().length;
+                    if (textLength > maxLength && 
+                        textLength > 10 && 
+                        !node.parentElement.tagName.match(/^(SCRIPT|STYLE|NOSCRIPT)$/i)) {
+                        mainTextNode = node;
+                        maxLength = textLength;
+                    }
+                });
                 
                 if (mainTextNode) {
+                    // Replace only the main text node with new content
                     mainTextNode.textContent = newText;
                     
-                    // We do NOT delete other nodes anymore to prevent breaking structure
-                    // Instead, we empty them if they are just fragments of the same sentence
+                    // Remove other text nodes to prevent duplication
                     textNodes.forEach(node => {
-                        if (node !== mainTextNode && node.textContent.trim().length > 0) {
-                            // Only clear if it looks like part of the sentence we just rewrote
-                            // Heuristic: if it's small, wipe it.
-                            if (node.textContent.length < 50) {
-                                node.textContent = '';
-                            }
+                        if (node !== mainTextNode && node.parentNode) {
+                            node.parentNode.removeChild(node);
                         }
                     });
                 } else {
-                    // Fallback
-                    element.textContent = newText;
+                    // Fallback: clear and set new text content
+                    const textNode = document.createTextNode(newText);
+                    element.innerHTML = '';
+                    element.appendChild(textNode);
                 }
             } else {
-                element.textContent = newText;
+                // No text nodes found, replace entire content
+                const textNode = document.createTextNode(newText);
+                element.innerHTML = '';
+                element.appendChild(textNode);
             }
         }
         
-        // Restore base attributes
+        // Restore original styles and classes
         element.className = originalClass;
         element.style.cssText = originalStyle;
         
+        // Restore attributes
         Object.keys(originalAttributes).forEach(attr => {
             element.setAttribute(attr, originalAttributes[attr]);
         });
-        
-        // CRITICAL FIX: Force-apply the captured typography styles to the CONTAINER
-        // This ensures that even if we lost an <i> tag inside, the <p> container becomes italic
-        element.style.fontSize = forcedStyles.fontSize;
-        element.style.fontFamily = forcedStyles.fontFamily;
-        element.style.fontWeight = forcedStyles.fontWeight;
-        element.style.fontStyle = forcedStyles.fontStyle;
-        element.style.textDecoration = forcedStyles.textDecoration;
-        element.style.textTransform = forcedStyles.textTransform;
-        element.style.lineHeight = forcedStyles.lineHeight;
-        element.style.color = forcedStyles.color;
-        element.style.textAlign = forcedStyles.textAlign;
         
         element.style.opacity = '1';
     }, 150);
@@ -284,14 +249,17 @@ function replaceElementTextContent(element, newText) {
 // Main function to summarize page content
 async function summarizePageContent(apiKey, targetLevel) {
     try {
+        // Extract main content from the page
         const textContent = extractMainContent();
         
         if (!textContent.trim()) {
             throw new Error('No readable text content found on this page');
         }
         
+        // Create summary
         const summary = await createSummary(textContent, targetLevel, apiKey);
         
+        // Download as text file instead of PDF to avoid binary issues
         downloadSummaryAsText(summary, targetLevel);
         
         return { success: true, summaryLength: summary.length };
@@ -309,10 +277,7 @@ async function createSummary(textContent, targetLevel, apiKey) {
     
     const prompt = `Create a ${targetWordCount} word summary of the following text at CEFR ${targetLevel} level.
 
-RESTRICTIONS:
-1. Do NOT change or translate Names, Street Addresses, or Locations.
-2. Do NOT change text inside quotation marks.
-3. Use vocabulary appropriate for ${targetLevel}.
+CEFR ${targetLevel} Guidelines: ${getLevelGuidelines(targetLevel)}
 
 Text to summarize:
 "${textContent.substring(0, 12000)}"
@@ -331,7 +296,7 @@ Summary (${targetLevel} level):`;
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a professional summarizer. You preserve proper nouns, addresses, and quotes exactly as they are.'
+                        content: 'You are a professional summarizer that creates concise summaries at specific CEFR English levels.'
                     },
                     {
                         role: 'user',
@@ -357,11 +322,12 @@ Summary (${targetLevel} level):`;
     }
 }
 
-// Download summary as text file
+// Download summary as text file (fix for PDF binary issue)
 function downloadSummaryAsText(summary, targetLevel) {
     const websiteName = document.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 30);
     const filename = `${websiteName}_${targetLevel}_summary.txt`;
     
+    // Create text content with proper formatting
     const textContent = `
 PAGE SUMMARY
 ============
@@ -378,6 +344,7 @@ ${summary}
 Generated by Make it easy! Chrome Extension
     `;
     
+    // Create blob and download
     const blob = new Blob([textContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -391,10 +358,11 @@ Generated by Make it easy! Chrome Extension
 
 // ========== UTILITY FUNCTIONS ==========
 
-// Store original text content
+// Store original text content with better element selection
 function storeOriginalTexts() {
     originalTexts.clear();
     
+    // More selective element targeting to preserve layout
     const textElements = document.querySelectorAll(`
         p, h1, h2, h3, h4, h5, h6,
         article p, article h1, article h2, article h3,
@@ -463,6 +431,7 @@ function extractMainContent() {
     
     let mainContent = '';
     
+    // Try to find main content containers first
     for (const selector of contentSelectors) {
         const element = document.querySelector(selector);
         if (element && getTextContentLength(element) > 100) {
@@ -471,8 +440,11 @@ function extractMainContent() {
         }
     }
     
+    // If no main content found, use body text but exclude navigation
     if (!mainContent || mainContent.length < 100) {
         const body = document.body.cloneNode(true);
+        
+        // Remove common navigation and non-content elements
         const excludeSelectors = [
             'nav', 'header', 'footer', '.nav', '.header', '.footer', 
             '.menu', '.sidebar', '.ad', '.advertisement', '.banner',
@@ -482,24 +454,29 @@ function extractMainContent() {
             const elements = body.querySelectorAll(selector);
             elements.forEach(el => el.remove());
         });
+        
         mainContent = body.textContent;
     }
     
+    // Clean up the text
     return cleanTextContent(mainContent);
 }
 
+// Get text content length
 function getTextContentLength(element) {
     return element.textContent.replace(/\s+/g, ' ').trim().length;
 }
 
+// Clean text content
 function cleanTextContent(text) {
     return text
         .replace(/\s+/g, ' ')
         .replace(/\n+/g, '\n')
         .trim()
-        .substring(0, 12000);
+        .substring(0, 12000); // Limit to avoid token limits
 }
 
+// Get CEFR level guidelines
 function getLevelGuidelines(level) {
     const guidelines = {
         'A1': 'Use very basic phrases and simple vocabulary. Short sentences. Everyday expressions.',
@@ -513,8 +490,10 @@ function getLevelGuidelines(level) {
     return guidelines[level] || 'Use appropriate language for the specified level.';
 }
 
+// Get text nodes from an element
 function getTextNodes(element) {
     const textNodes = [];
+    
     function findTextNodes(node) {
         if (node.nodeType === Node.TEXT_NODE) {
             textNodes.push(node);
@@ -522,28 +501,22 @@ function getTextNodes(element) {
             node.childNodes.forEach(findTextNodes);
         }
     }
+    
     findTextNodes(element);
     return textNodes;
 }
 
+// Reset page to original content
 function resetPageContent() {
     if (!isRewritten) return;
     
     originalTexts.forEach(item => {
         item.element.innerHTML = item.originalHTML;
-        // Reset any forced styles
-        item.element.style.fontSize = '';
-        item.element.style.fontFamily = '';
-        item.element.style.fontWeight = '';
-        item.element.style.fontStyle = ''; // Reset italics
-        item.element.style.textDecoration = ''; // Reset underline
-        item.element.style.lineHeight = '';
-        item.element.style.color = '';
-        item.element.style.textAlign = '';
     });
     
     isRewritten = false;
     
+    // Smooth transition
     document.body.style.transition = 'opacity 0.3s ease';
     document.body.style.opacity = '0.8';
     setTimeout(() => {
